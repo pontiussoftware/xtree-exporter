@@ -35,6 +35,12 @@ payload = {'userName': api_username, 'password': api_password, 'submit': submit,
 url = 'http://xtree-rest.digicult-verbund.de/login.php'
 xml_head = '<?xml version="1.0" encoding="UTF-8"?><Vocabulary xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://vocabsservices.getty.edu/Schemas/AAT/AATGetSubject.xsd">'
 
+csv_id = []
+csv_notation = []
+csv_de = []
+csv_fr = []
+csv_it = []
+
 
 # get lower level terms by ID
 def getChildrenById(id):
@@ -244,6 +250,7 @@ def add_children():
                     # tree_dict.update({leaf_child_id: child['Concept']})
                     parent = root.find(".//Subject[@Subject_ID='" + leaf_id + "']")
                     xml_child_fields(parent, leaf_child_id, child['Concept'])
+                    add_to_csv_frame(child['Concept'])
                 except treelib.exceptions.DuplicatedNodeIdError:
                     nodes_not_added.append(leaf_child_id)
     # print('all leaves: ' + str(len(leaves)))
@@ -253,6 +260,20 @@ def add_children():
         return
     else:
         add_children()
+
+
+def add_to_csv_frame(concept):
+    try:
+        csv_id.append(concept['id'])
+        csv_notation.append(concept['notation'])
+        csv_de.append(concept['Term'][0]['Term'])
+        csv_fr.append(concept['Term'][1]['Term'])
+    except:
+        print('something else is wrong')
+    try:
+        csv_it.append(concept['Term'][2]['Term'])
+    except:
+        csv_it.append('')
 
 
 def create_tree():
@@ -266,6 +287,7 @@ def create_tree():
             # tree_dict.update({subject_ID: concept})
             Subject = ET.SubElement(root, 'Subject', {'Subject_ID': subject_ID})
             xml_topLevel_fields(Subject, concept, subject_ID)
+            add_to_csv_frame(concept)
 
             # adding data of children
             children_list = concept['narrower']
@@ -300,4 +322,14 @@ with requests.Session() as session:
     xml_string = ET.tostring(root)
     file = open("export_xTree_trachsler.xml", "w")
     file.write('<?xml version="1.0" encoding="UTF-8"?>' + xml_string.decode('utf-8'))
-    print('exported Trachsler to file')
+    print('exported Trachsler to XML-file')
+
+    csv_frame = pd.DataFrame(
+        {'id': csv_id,
+         'notation': csv_notation,
+         'de': csv_de,
+         'fr': csv_fr,
+         'it': csv_it
+         })
+    csv_frame.to_csv('export_xTree_trachsler.csv', sep=';')
+    print('exported Trachsler to CSV-file')
