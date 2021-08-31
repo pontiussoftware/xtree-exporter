@@ -1,9 +1,17 @@
 import requests
 import treelib
-from treelib import Node, Tree
+import argparse
 import sys
+import os
 import pandas as pd
 import xml.etree.ElementTree as ET
+from treelib import Node, Tree
+
+# Constants
+url_prefix = 'http://xtree-rest.digicult-verbund.de/'
+action_getSearchVocItemsById = url_prefix + 'getSearchVocItemsById'
+action_getTopClassTC = url_prefix + 'getTopClassTC'
+action_getFetchHierarchy = url_prefix + 'getFetchHierarchy'
 
 sys.setrecursionlimit(10 ** 5)
 
@@ -11,29 +19,28 @@ checked_leaves = []
 nodes_not_added = []
 # tree_dict = {}
 
-credentials = pd.read_csv('/Users/cristinailli/Desktop/credentials.csv', sep=';')
+# Parse program arguments
+parser = argparse.ArgumentParser(description="Program arguments for XTree exporter.")
+parser.add_argument('-v', '--vokabulary', dest='vokabulary', help='The vocabulary to download.')
+parser.add_argument('-u', '--username', dest='username', help='Username to use for authentication with XTree.')
+parser.add_argument('-p', '--password', dest='password', help='Password to use for authentication with XTree.')
+parser.add_argument('-o', '--output', dest='output', help='The path to the resulting output files.')
+parser.add_argument('-n', '--name', dest='name', help='Name of the output file.')
+arguments = parser.parse_args()
 
 ### Parameters ###
-api_username = credentials['api_username']
-api_password = credentials['api_password']
-vocabulary = 'http%3A%2F%2Fdigicult.vocnet.org%2Ftrachsler'
-service = 'http://xtree-rest.digicult-verbund.de'
-start = 'start'
-count = 'count'
-jsonfull = '0'
-lang = 'all'
-submit_action_getTopClassTC = 'getTopClassTC'
-submit = 'Log+in'
-submitID = '264859'
-contributor_id = 'xtree-system'
-url_prefix = 'http://xtree-rest.digicult-verbund.de/'
-submit_Action_getFetchHierarchy = 'getFetchHierarchy'
-request_url_getTopClassTC = url_prefix + submit_action_getTopClassTC + '?vocabulary=' + vocabulary + '&start=' + start + \
-                            '&count=' + count + '&jsonfull=' + jsonfull + '&lang=' + lang + '&submit=' + submit_action_getTopClassTC
+api_username = arguments.username
+api_password = arguments.password
+vocabulary = arguments.vokabulary  # 'http%3A%2F%2Fdigicult.vocnet.org%2Ftrachsler'
 
-payload = {'userName': api_username, 'password': api_password, 'submit': submit, 'submitID': submitID}
-url = 'http://xtree-rest.digicult-verbund.de/login.php'
-xml_head = '<?xml version="1.0" encoding="UTF-8"?><Vocabulary xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://vocabsservices.getty.edu/Schemas/AAT/AATGetSubject.xsd">'
+# Prepare empty CSV data
+csv_data = {
+    'id': [],
+    'notation': [],
+    'de': [],
+    'fr': [],
+    'it': []
+}
 
 csv_id = []
 csv_notation = []
@@ -45,17 +52,11 @@ csv_it = []
 # get lower level terms by ID
 def getChildrenById(id):
     searchidslist = id
-    # 'http://xtree-rest.digicult-verbund.de/getSearchVocItemsById?vocabulary=http%3A%2F%2Fdigicult.vocnet.org%2Ftrachsler
-    #  &searchidslist=t00001&start=start&count=count&typeofvocitem=all&jsonfull=0&lang=all&submit=getSearchVocItemsById'
-    typeofvocitem = 'all'
-    submit_action_getSearchVocItemsById = 'getSearchVocItemsById'
-    request_url_getSearchVocItemsById = 'http://xtree-rest.digicult-verbund.de/' + submit_action_getSearchVocItemsById \
-                                        + '?vocabulary=' + vocabulary + '&searchidslist=' + searchidslist + '&start=' \
-                                        + start + '&count=' + count + '&typeofvocitem=' + typeofvocitem + '&jsonfull=' \
-                                        + jsonfull + '&lang=' + lang + '&submit=' + submit_action_getSearchVocItemsById
-
     # print('request_url_getSearchVocItemsById : ' + request_url_getSearchVocItemsById)
-    getSearchVocItemsById_response = session.get(request_url_getSearchVocItemsById)
+    getSearchVocItemsById_response = session.get(action_getSearchVocItemsById,
+                                                 params={'vocabulary': vocabulary, 'searchidslist': searchidslist,
+                                                         'start': 'start', 'count': 'count', 'jsonfull': 0,
+                                                         'lang': 'all', 'typeofvocitem': 'all'})
     dump_SearchVocItemsById = getSearchVocItemsById_response.json()
     dump_vocItemCount = dump_SearchVocItemsById['vocItemCount']
     dump_SearchVocItemsById_vocItems = dump_SearchVocItemsById['VocabularyItem']
@@ -66,13 +67,6 @@ def getChildrenById(id):
         # print('ERROR NO CHILD for this node, it\'s a LEAF. Passing: ' + dump_SearchVocItemsById_vocItems[0]['Concept'][
         #     'id'])
         return dump_SearchVocItemsById_vocItems[0]['Concept']['id']
-
-
-def getHierarchy():
-    request_url_getFetchHierarchy = url_prefix + 'getFetchHierarchy?vocabulary=http%3A%2F%2Fdigicult.vocnet.org%2Ftrachsler&direction=down&level=N&start=1&count=3&typeofvocitem=all&term=Enter+single+term&jsonfull=0&lang=all&submit=getFetchHierarchy'
-    print('URL : ' + request_url_getFetchHierarchy)
-    getHierarchyResponse = session.get(request_url_getFetchHierarchy)
-    dump_getHierarchyResponse = getHierarchyResponse.json()
 
 
 def xml_topLevel_fields(Subject, concept, subject_ID):
@@ -263,24 +257,36 @@ def add_children():
 
 
 def add_to_csv_frame(concept):
+    csv_data['id'].append(concept['id'])
+    csv_data['notation'].append(concept['notation'])
+
+    # Try to append DE term.
     try:
-        csv_id.append(concept['id'])
-        csv_notation.append(concept['notation'])
-        csv_de.append(concept['Term'][0]['Term'])
-        csv_fr.append(concept['Term'][1]['Term'])
+        csv_data['de'].append(concept['Term'][0]['Term'])
     except:
-        print('something else is wrong')
+        print('Concept ' + concept['id'] + ' does not have a DE term.')
+        csv_data['de'].append('')
+
+    # Try to append FR term.
     try:
-        csv_it.append(concept['Term'][2]['Term'])
+        csv_data['fr'].append(concept['Term'][1]['Term'])
     except:
-        csv_it.append('')
+        print('Concept ' + concept['id'] + ' does not have a FR term.')
+        csv_data['fr'].append('')
+
+    # Try to append IT term.
+    try:
+        csv_data['it'].append(concept['Term'][2]['Term'])
+    except:
+        print('Concept ' + concept['id'] + ' does not have a IT term.')
+        csv_data['it'].append('')
 
 
 def create_tree():
+    # Create top level tree with its children
     global subject_ID, child
-    # cerate top level tree with its children
-    for x in range(dump_vocItemCount):
-        concept = dump_getTopClassTC_vocItems[x]['Concept']
+    for x in range(vocItemCount):
+        concept = vocItems[x]['Concept']
         subject_ID = concept['id']
         if 'broader' not in concept:
             helper_tree.create_node(subject_ID, subject_ID, parent='root')
@@ -303,33 +309,42 @@ def create_tree():
 
 
 with requests.Session() as session:
-    post = session.post(url, data=payload)
-    getTopClassTC_response = session.get(request_url_getTopClassTC)
-    # print('URL : ' + request_url_getTopClassTC)
-    dump_getTopClassTC = getTopClassTC_response.json()
-    dump_vocItemCount = dump_getTopClassTC['vocItemCount']
-    dump_getTopClassTC_vocItems = dump_getTopClassTC['VocabularyItem']
+    # 1: Attempt login
+    login_response = session.post('http://xtree-rest.digicult-verbund.de/login.php',
+                                  data={'userName': api_username, 'password': api_password, 'submit': 'Log+In',
+                                        'submitID': 264859})
+    if login_response.status_code != 200:
+        print('Login to XTree failed. Please check your credentials')
+        exit(1)
 
-    # root = ET.Element('root')
+    # 2: Load top level items of selected vocabulary
+    gettopclasstc_response = session.get(action_getTopClassTC,
+                                         params={'vocabulary': vocabulary, 'start': 'start', 'count': 'count',
+                                                 'jsonfull': 0, 'lang': 'all'})
+    if gettopclasstc_response.status_code != 200:
+        print('Failed to load top level terms for vocabulary: ' + arguments.vocabulary)
+        exit(1)
+
+    # Extract necessary data
+    dump = gettopclasstc_response.json()
+    vocItemCount = dump['vocItemCount']
+    vocItems = dump['VocabularyItem']
+
+    # Prepare XML root
     root = ET.Element('Vocabulary', {'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
                                      'xsi:noNamespaceSchemaLocation': 'http://vocabsservices.getty.edu/Schemas/AAT/AATGetSubject.xsd'})
-
+    # Start to build-up tree.
     helper_tree = Tree()
     helper_tree.create_node('root', 'root')  # root node
     create_tree()
 
-    # create a new XML file with the results
+    # Create a new XML file with the results
     xml_string = ET.tostring(root)
-    file = open("export_xTree_trachsler.xml", "w")
-    file.write('<?xml version="1.0" encoding="UTF-8"?>' + xml_string.decode('utf-8'))
-    print('exported Trachsler to XML-file')
+    xml_file = open(os.path.join(arguments.output, arguments.name + '.xml'), 'w')
+    xml_file.write('<?xml version="1.0" encoding="UTF-8"?>' + xml_string.decode('utf-8'))
+    print('Successfully exported vocabulary to XML-file.')
 
-    csv_frame = pd.DataFrame(
-        {'id': csv_id,
-         'notation': csv_notation,
-         'de': csv_de,
-         'fr': csv_fr,
-         'it': csv_it
-         })
-    csv_frame.to_csv('export_xTree_trachsler.csv', sep=';')
-    print('exported Trachsler to CSV-file')
+    # Create a new CSV file with the results
+    csv_file = open(os.path.join(arguments.output, arguments.name + '.csv'), 'w')
+    pd.DataFrame(csv_data).to_csv(csv_file, sep=';')
+    print('Successfully exported vocabulary to CSV-file.')
