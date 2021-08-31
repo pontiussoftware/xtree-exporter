@@ -42,31 +42,19 @@ csv_data = {
     'it': []
 }
 
-csv_id = []
-csv_notation = []
-csv_de = []
-csv_fr = []
-csv_it = []
-
-
 # get lower level terms by ID
 def getChildrenById(id):
-    searchidslist = id
-    # print('request_url_getSearchVocItemsById : ' + request_url_getSearchVocItemsById)
-    getSearchVocItemsById_response = session.get(action_getSearchVocItemsById,
-                                                 params={'vocabulary': vocabulary, 'searchidslist': searchidslist,
-                                                         'start': 'start', 'count': 'count', 'jsonfull': 0,
-                                                         'lang': 'all', 'typeofvocitem': 'all'})
-    dump_SearchVocItemsById = getSearchVocItemsById_response.json()
-    dump_vocItemCount = dump_SearchVocItemsById['vocItemCount']
-    dump_SearchVocItemsById_vocItems = dump_SearchVocItemsById['VocabularyItem']
+    respone = session.get(action_getSearchVocItemsById,
+                          params={'vocabulary': vocabulary, 'searchidslist': id, 'start': 'start',
+                                  'count': 'count', 'jsonfull': 0, 'lang': 'all', 'typeofvocitem': 'all'})
+    if respone.status_code != 200:
+        print('Failed to load top child terms (vocabulary=' + arguments.vocabulary + ",id=" + id + ')')
+        exit(1)
+
     try:
-        children = dump_SearchVocItemsById_vocItems[0]['Concept']['narrower']
-        return children
+        return respone.json()['VocabularyItem'][0]['Concept']['narrower']
     except:
-        # print('ERROR NO CHILD for this node, it\'s a LEAF. Passing: ' + dump_SearchVocItemsById_vocItems[0]['Concept'][
-        #     'id'])
-        return dump_SearchVocItemsById_vocItems[0]['Concept']['id']
+        return None
 
 
 def xml_topLevel_fields(Subject, concept, subject_ID):
@@ -234,22 +222,18 @@ def add_children():
     s = ET.tostring(root)
     for leaf_id in new_leaves:
         leaf_children = getChildrenById(leaf_id)
-        if type(leaf_children) == str:
+        if leaf_children is None:
             checked_leaves.append(leaf_id)
         else:
             for child in leaf_children:
                 leaf_child_id = child['Concept']['id']
                 try:
                     helper_tree.create_node(leaf_child_id, leaf_child_id, parent=leaf_id)
-                    # tree_dict.update({leaf_child_id: child['Concept']})
                     parent = root.find(".//Subject[@Subject_ID='" + leaf_id + "']")
                     xml_child_fields(parent, leaf_child_id, child['Concept'])
                     add_to_csv_frame(child['Concept'])
                 except treelib.exceptions.DuplicatedNodeIdError:
                     nodes_not_added.append(leaf_child_id)
-    # print('all leaves: ' + str(len(leaves)))
-    # print('new leaves: ' + str(len(new_leaves)))
-    # print('checked leaves: ' + str(len(checked_leaves)))
     if len(new_leaves) == 0:
         return
     else:
@@ -318,15 +302,15 @@ with requests.Session() as session:
         exit(1)
 
     # 2: Load top level items of selected vocabulary
-    gettopclasstc_response = session.get(action_getTopClassTC,
-                                         params={'vocabulary': vocabulary, 'start': 'start', 'count': 'count',
+    response = session.get(action_getTopClassTC,
+                           params={'vocabulary': vocabulary, 'start': 'start', 'count': 'count',
                                                  'jsonfull': 0, 'lang': 'all'})
-    if gettopclasstc_response.status_code != 200:
+    if response.status_code != 200:
         print('Failed to load top level terms for vocabulary: ' + arguments.vocabulary)
         exit(1)
 
     # Extract necessary data
-    dump = gettopclasstc_response.json()
+    dump = response.json()
     vocItemCount = dump['vocItemCount']
     vocItems = dump['VocabularyItem']
 
@@ -344,7 +328,7 @@ with requests.Session() as session:
     xml_file.write('<?xml version="1.0" encoding="UTF-8"?>' + xml_string.decode('utf-8'))
     print('Successfully exported vocabulary to XML-file.')
 
-    # Create a new CSV file with the results
-    csv_file = open(os.path.join(arguments.output, arguments.name + '.csv'), 'w')
-    pd.DataFrame(csv_data).to_csv(csv_file, sep=';')
+    # Create a new tabulator separated file with the results
+    csv_file = open(os.path.join(arguments.output, arguments.name + '.txt'), 'w')
+    pd.DataFrame(csv_data).sort_values('notation').to_csv(csv_file, sep='\t', index=False, encoding='utf-8')
     print('Successfully exported vocabulary to CSV-file.')
