@@ -9,9 +9,9 @@ from treelib import Node, Tree
 
 # Constants
 url_prefix = 'http://xtree-rest.digicult-verbund.de/'
-action_getSearchVocItemsById = url_prefix + 'getSearchVocItemsById'
-action_getTopClassTC = url_prefix + 'getTopClassTC'
-action_getFetchHierarchy = url_prefix + 'getFetchHierarchy'
+url_getSearchVocItemsById = url_prefix + 'getSearchVocItemsById'
+url_getTopClassTC = url_prefix + 'getTopClassTC'
+url_getFetchHierarchy = url_prefix + 'getFetchHierarchy'
 
 sys.setrecursionlimit(10 ** 5)
 
@@ -21,7 +21,7 @@ nodes_not_added = []
 
 # Parse program arguments
 parser = argparse.ArgumentParser(description="Program arguments for XTree exporter.")
-parser.add_argument('-v', '--vokabulary', dest='vokabulary', help='The vocabulary to download.')
+parser.add_argument('-v', '--vocabulary', dest='vocabulary', help='The vocabulary to download.')
 parser.add_argument('-u', '--username', dest='username', help='Username to use for authentication with XTree.')
 parser.add_argument('-p', '--password', dest='password', help='Password to use for authentication with XTree.')
 parser.add_argument('-o', '--output', dest='output', help='The path to the resulting output files.')
@@ -31,7 +31,7 @@ arguments = parser.parse_args()
 ### Parameters ###
 api_username = arguments.username
 api_password = arguments.password
-vocabulary = arguments.vokabulary  # 'http%3A%2F%2Fdigicult.vocnet.org%2Ftrachsler'
+vocabulary = arguments.vocabulary  # Trachsler: http://digicult.vocnet.org/trachsler
 
 # Prepare empty CSV data
 csv_data = {
@@ -44,7 +44,7 @@ csv_data = {
 
 # get lower level terms by ID
 def getChildrenById(id):
-    respone = session.get(action_getSearchVocItemsById,
+    respone = session.get(url_getSearchVocItemsById,
                           params={'vocabulary': vocabulary, 'searchidslist': id, 'start': 'start',
                                   'count': 'count', 'jsonfull': 0, 'lang': 'all', 'typeofvocitem': 'all'})
     if respone.status_code != 200:
@@ -302,7 +302,7 @@ with requests.Session() as session:
         exit(1)
 
     # 2: Load top level items of selected vocabulary
-    response = session.get(action_getTopClassTC,
+    response = session.get(url_getTopClassTC,
                            params={'vocabulary': vocabulary, 'start': 'start', 'count': 'count',
                                                  'jsonfull': 0, 'lang': 'all'})
     if response.status_code != 200:
