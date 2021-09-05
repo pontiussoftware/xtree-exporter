@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from treelib import Node, Tree
 
 # Constants
-url_prefix = 'http://xtree-rest.digicult-verbund.de/'
+url_prefix = 'https://xtree-rest.digicult-verbund.de/'
 url_getSearchVocItemsById = url_prefix + 'getSearchVocItemsById'
 url_getTopClassTC = url_prefix + 'getTopClassTC'
 url_getFetchHierarchy = url_prefix + 'getFetchHierarchy'
@@ -41,6 +41,7 @@ csv_data = {
     'fr': [],
     'it': []
 }
+
 
 # get lower level terms by ID
 def getChildrenById(id):
@@ -194,10 +195,7 @@ def xml_child_fields(Subject, child_id, concept):
     Terms.append(Non_Preferred_Term)
     Term_Text = Non_Preferred_Term.makeelement('Term_Text', {})
     Non_Preferred_Term.append(Term_Text)
-    try:
-        Term_Text.text = concept['Term'][2]['Term']
-    except KeyError:
-        print('reached a leaf')
+    Term_Text.text = concept['Term'][2]['Term']
     Term_ID = Non_Preferred_Term.makeelement('Term_ID', {})
     Non_Preferred_Term.append(Term_ID)
     Term_ID.text = concept['id']
@@ -230,6 +228,28 @@ def add_children():
                 try:
                     helper_tree.create_node(leaf_child_id, leaf_child_id, parent=leaf_id)
                     parent = root.find(".//Subject[@Subject_ID='" + leaf_id + "']")
+
+                    try:
+                        normalized = child['Concept']['Term'][0]['Term']
+                        child['Concept']['Term'][0]['Term'] = normalized
+                    except KeyError:
+                        print('Concept ' + child['Concept']['id'] + ' does not have a DE term.')
+                        child['Concept']['Term'][0]['Term'] = ''
+
+                    try:
+                        normalized = child['Concept']['Term'][1]['Term']
+                        child['Concept']['Term'][1]['Term'] = normalized
+                    except KeyError:
+                        print('Concept ' + child['Concept']['id'] + ' does not have a FR term.')
+                        child['Concept']['Term'][1]['Term'] = ''
+
+                    try:
+                        normalized = child['Concept']['Term'][2]['Term']
+                        child['Concept']['Term'][2]['Term'] = normalized
+                    except KeyError:
+                        print('Concept ' + child['Concept']['id'] + ' does not have a IT term.')
+                        child['Concept']['Term'][2]['Term'] = ''
+
                     xml_child_fields(parent, leaf_child_id, child['Concept'])
                     add_to_csv_frame(child['Concept'])
                 except treelib.exceptions.DuplicatedNodeIdError:
@@ -243,27 +263,9 @@ def add_children():
 def add_to_csv_frame(concept):
     csv_data['id'].append(concept['id'])
     csv_data['notation'].append(concept['notation'])
-
-    # Try to append DE term.
-    try:
-        csv_data['de'].append(concept['Term'][0]['Term'])
-    except:
-        print('Concept ' + concept['id'] + ' does not have a DE term.')
-        csv_data['de'].append('')
-
-    # Try to append FR term.
-    try:
-        csv_data['fr'].append(concept['Term'][1]['Term'])
-    except:
-        print('Concept ' + concept['id'] + ' does not have a FR term.')
-        csv_data['fr'].append('')
-
-    # Try to append IT term.
-    try:
-        csv_data['it'].append(concept['Term'][2]['Term'])
-    except:
-        print('Concept ' + concept['id'] + ' does not have a IT term.')
-        csv_data['it'].append('')
+    csv_data['de'].append(concept['Term'][0]['Term'])
+    csv_data['fr'].append(concept['Term'][1]['Term'])
+    csv_data['it'].append(concept['Term'][2]['Term'])
 
 
 def create_tree():
@@ -304,7 +306,7 @@ with requests.Session() as session:
     # 2: Load top level items of selected vocabulary
     response = session.get(url_getTopClassTC,
                            params={'vocabulary': vocabulary, 'start': 'start', 'count': 'count',
-                                                 'jsonfull': 0, 'lang': 'all'})
+                                   'jsonfull': 0, 'lang': 'all'})
     if response.status_code != 200:
         print('Failed to load top level terms for vocabulary: ' + arguments.vocabulary)
         exit(1)
@@ -323,12 +325,14 @@ with requests.Session() as session:
     create_tree()
 
     # Create a new XML file with the results
-    xml_string = ET.tostring(root)
-    xml_file = open(os.path.join(arguments.output, arguments.name + '.xml'), 'w')
-    xml_file.write('<?xml version="1.0" encoding="UTF-8"?>' + xml_string.decode('utf-8'))
-    print('Successfully exported vocabulary to XML-file.')
+    with open(os.path.join(arguments.output, arguments.name + '.xml'), 'w', encoding='utf-8') as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>')
+        f.write(ET.tostring(root, encoding='unicode'))
+        print('Successfully exported vocabulary to XML-file.')
 
     # Create a new tabulator separated file with the results
-    csv_file = open(os.path.join(arguments.output, arguments.name + '.txt'), 'w')
-    pd.DataFrame(csv_data).sort_values('notation').to_csv(csv_file, sep='\t', index=False, encoding='utf-8')
-    print('Successfully exported vocabulary to CSV-file.')
+    with open(os.path.join(arguments.output, arguments.name + '.txt'), 'w', encoding='utf-8') as f:
+        pd.DataFrame(csv_data).sort_values('notation').to_csv(f, sep='\t', index=False, encoding='utf-8')
+        print('Successfully exported vocabulary to CSV-file.')
+
+    print('Done!')
